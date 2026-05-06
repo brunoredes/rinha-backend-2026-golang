@@ -1,0 +1,15 @@
+.git
+.gitignore
+.github
+.claude
+.vscode
+.idea
+data/
+**/*_test.go
+docs/
+misc/
+README.md
+*.md
+Dockerfile
+docker-compose.yml
+deploy/

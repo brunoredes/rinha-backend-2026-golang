@@ -1,0 +1,68 @@
+# Sum of resource limits: 1.00 CPU, 350 MB
+#   nginx: 0.10 CPU,  20 MB
+#   api1:  0.45 CPU, 165 MB
+#   api2:  0.45 CPU, 165 MB
+#
+# The two API replicas mount the same named volume at /data. Docker
+# auto-populates the empty volume from api1's image content on first
+# start; api2 then mounts the same inode read-only, so the kernel page
+# cache for the 168 MB IVF blob is shared (one set of physical pages
+# under both processes).
+
+services:
+  api1:
+    image: ${IMAGE:-rinha-fraud:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    networks: [internal]
+    volumes:
+      - appdata:/data
+    environment:
+      ADDR: ":9999"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.45"
+          memory: 165M
+    restart: unless-stopped
+
+  api2:
+    image: ${IMAGE:-rinha-fraud:latest}
+    networks: [internal]
+    depends_on:
+      - api1
+    volumes:
+      - appdata:/data
+    environment:
+      ADDR: ":9999"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.45"
+          memory: 165M
+    restart: unless-stopped
+
+  lb:
+    image: nginx:1.27-alpine
+    networks: [internal]
+    depends_on:
+      - api1
+      - api2
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 20M
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  appdata:
