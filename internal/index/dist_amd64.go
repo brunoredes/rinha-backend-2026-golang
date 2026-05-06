@@ -26,3 +26,11 @@ func distancesBlock(q []float32, refs []float32, n int, out []float32) {
 	}
 	distancesBlockScalar(q, refs, n, out)
 }
+
+// DistancesBlock is the exported entry point for other packages (e.g.
+// internal/ivf) that need to compute squared L2 distances between one
+// query and a batch of refs using the same kernel as Brute. q must be
+// a QueryStride-long buffer with q[VectorDim:] zeroed.
+func DistancesBlock(q []float32, refs []float32, n int, out []float32) {
+	distancesBlock(q, refs, n, out)
+}

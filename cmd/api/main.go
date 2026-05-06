@@ -20,6 +20,7 @@ import (
 	"rinha-backend-golang/m/v2/internal/detection"
 	"rinha-backend-golang/m/v2/internal/domain"
 	"rinha-backend-golang/m/v2/internal/index"
+	"rinha-backend-golang/m/v2/internal/ivf"
 	"rinha-backend-golang/m/v2/internal/refdata"
 	"rinha-backend-golang/m/v2/internal/server"
 )
@@ -38,25 +39,13 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	logger.Info("loading refdata", "vectors", cfg.VectorsPath, "labels", cfg.LabelsPath)
 	startLoad := time.Now()
 
-	vecs, err := refdata.OpenVectors(cfg.VectorsPath, domain.VectorDimensions)
+	searcher, indexCount, closer, err := openSearcher(cfg, logger)
 	if err != nil {
-		return fmt.Errorf("open vectors: %w", err)
+		return err
 	}
-	defer vecs.Close()
-
-	lbls, err := refdata.OpenLabels(cfg.LabelsPath)
-	if err != nil {
-		return fmt.Errorf("open labels: %w", err)
-	}
-	defer lbls.Close()
-
-	searcher, err := index.NewBrute(vecs, lbls)
-	if err != nil {
-		return fmt.Errorf("build searcher: %w", err)
-	}
+	defer closer()
 
 	norm, err := detection.LoadNormalization(cfg.NormalizationPath)
 	if err != nil {
@@ -84,7 +73,7 @@ func run(logger *slog.Logger) error {
 	h.SetReady(true)
 
 	logger.Info("refdata loaded",
-		"count", searcher.Count(),
+		"count", indexCount,
 		"elapsed", time.Since(startLoad).String(),
 	)
 
@@ -122,4 +111,50 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
+}
+
+// openSearcher tries the IVF index first; if its directory is missing or
+// any file inside it is malformed, it falls back to brute-force scanning
+// the flat refs.f32 + labels.bits. The returned closer must be invoked
+// before process exit.
+func openSearcher(cfg config.API, logger *slog.Logger) (server.Searcher, uint64, func(), error) {
+	if cfg.IVFDir != "" {
+		if _, err := os.Stat(cfg.IVFDir); err == nil {
+			ix, err := ivf.Open(cfg.IVFDir, domain.VectorDimensions)
+			if err == nil {
+				s, err := ivf.NewSearcher(ix, ivf.SearchParams{NProbe: cfg.NProbe})
+				if err != nil {
+					_ = ix.Close()
+					return nil, 0, nil, fmt.Errorf("ivf searcher: %w", err)
+				}
+				logger.Info("using ivf searcher",
+					"dir", cfg.IVFDir, "k", ix.K, "nprobe", cfg.NProbe, "count", ix.Count)
+				return s, ix.Count, func() { _ = ix.Close() }, nil
+			}
+			logger.Warn("ivf open failed; falling back to brute", "err", err)
+		} else {
+			logger.Info("ivf dir not present; using brute-force", "dir", cfg.IVFDir)
+		}
+	}
+
+	vecs, err := refdata.OpenVectors(cfg.VectorsPath, domain.VectorDimensions)
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("open vectors: %w", err)
+	}
+	lbls, err := refdata.OpenLabels(cfg.LabelsPath)
+	if err != nil {
+		_ = vecs.Close()
+		return nil, 0, nil, fmt.Errorf("open labels: %w", err)
+	}
+	b, err := index.NewBrute(vecs, lbls)
+	if err != nil {
+		_ = vecs.Close()
+		_ = lbls.Close()
+		return nil, 0, nil, fmt.Errorf("brute searcher: %w", err)
+	}
+	logger.Info("using brute searcher", "count", b.Count())
+	return b, b.Count(), func() {
+		_ = vecs.Close()
+		_ = lbls.Close()
+	}, nil
 }

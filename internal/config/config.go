@@ -13,15 +13,17 @@ import (
 
 // API holds everything the fraud-score server needs at boot.
 type API struct {
-	Addr            string
-	VectorsPath     string
-	LabelsPath      string
+	Addr              string
+	VectorsPath       string
+	LabelsPath        string
 	NormalizationPath string
-	MCCRiskPath     string
-	K               int
-	Threshold       float32
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
+	MCCRiskPath       string
+	IVFDir            string // empty disables IVF and forces brute-force
+	NProbe            int
+	K                 int
+	Threshold         float32
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
 }
 
 // Load reads environment variables, applies defaults, and validates.
@@ -32,6 +34,7 @@ func Load() (API, error) {
 		LabelsPath:        getEnv("DATA_LABELS", "data/labels.bits"),
 		NormalizationPath: getEnv("DATA_NORMALIZATION", "resources/normalization.json"),
 		MCCRiskPath:       getEnv("DATA_MCC_RISK", "resources/mcc_risk.json"),
+		IVFDir:            getEnv("DATA_IVF", "data/ivf"),
 		ReadTimeout:       2 * time.Second,
 		WriteTimeout:      2 * time.Second,
 	}
@@ -41,6 +44,12 @@ func Load() (API, error) {
 		return API{}, err
 	}
 	cfg.K = k
+
+	nprobe, err := getInt("NPROBE", 8)
+	if err != nil {
+		return API{}, err
+	}
+	cfg.NProbe = nprobe
 
 	thr, err := getFloat32("THRESHOLD", 0.6)
 	if err != nil {
