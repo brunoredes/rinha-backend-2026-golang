@@ -81,7 +81,7 @@ func (v *Vectorizer) Build(req domain.FraudScoreRequest) ([domain.VectorDimensio
 	out[3] = float32(reqAt.UTC().Hour()) / 23.0
 	out[4] = float32(toMondayZero(reqAt.UTC().Weekday())) / 6.0
 
-	if req.LastTransaction != nil {
+	if req.LastTransaction == nil {
 		out[5] = -1
 		out[6] = -1
 	} else {
