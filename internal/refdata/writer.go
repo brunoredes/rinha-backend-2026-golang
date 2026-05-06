@@ -50,8 +50,14 @@ func (w *VectorWriter) Append(vec []float32) error {
 // Count returns how many vectors have been appended.
 func (w *VectorWriter) Count() uint64 { return w.count }
 
-// Close flushes and patches the header with the final count.
+// Close flushes and patches the header with the final count. It also
+// writes a small zero-byte tail (TailPadFloats * 4 bytes) so SIMD readers
+// can safely over-read past the last vector by up to TailPadFloats lanes.
 func (w *VectorWriter) Close() error {
+	var pad [TailPadFloats * 4]byte
+	if _, err := w.bw.Write(pad[:]); err != nil {
+		return fmt.Errorf("write tail pad: %w", err)
+	}
 	if err := w.bw.Flush(); err != nil {
 		return fmt.Errorf("flush: %w", err)
 	}

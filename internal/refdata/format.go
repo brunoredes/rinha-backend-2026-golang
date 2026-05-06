@@ -32,6 +32,13 @@ import (
 const (
 	HeaderSize    = 64
 	FormatVersion = uint32(1)
+
+	// TailPadFloats is the number of zero float32 lanes appended after the
+	// vector payload so a SIMD kernel reading two YMM registers (16 floats)
+	// can over-read past the last vector without segfaulting or pulling
+	// adjacent vector data into the high lanes. 8 is enough for a single
+	// trailing YMM; we use 16 for headroom.
+	TailPadFloats = 16
 )
 
 var (

@@ -23,6 +23,11 @@ type Neighbor struct {
 	Fraud    bool
 }
 
+// blockSize is how many distances we ask the SIMD kernel to compute per
+// call before merging into the running top-K. 1024 floats fit easily in
+// L1 (4 KiB) so the post-block top-K scan reads from cache.
+const blockSize = 1024
+
 // Brute scans every reference vector for each query. O(N*dim) per query.
 type Brute struct {
 	vecs *refdata.Vectors
@@ -48,10 +53,11 @@ func (b *Brute) Count() uint64 { return b.vecs.Header.Count }
 // TopK fills out[:k] with the k nearest neighbors of query, sorted ascending
 // by distance. The returned slice aliases out and has length k.
 //
-// Algorithm: maintain an unsorted array of k candidates plus the index of
-// its current max. For each scanned reference, the early-exit check
-// `dist < topMax` skips the vast majority once the heap warms up; the
-// post-replace max scan is O(k), which is negligible at k=5.
+// Algorithm: pad the query into a 16-float buffer, hand blocks of refs to
+// the SIMD kernel (or scalar fallback), then merge each block's distances
+// into a k-element max-tracker. The early-exit `d >= currentMax` check
+// skips the vast majority of refs once the tracker warms up; the post-
+// replace max scan is O(k), negligible at k=5.
 func (b *Brute) TopK(query []float32, out []Neighbor) ([]Neighbor, error) {
 	if len(query) != b.dim {
 		return nil, fmt.Errorf("%w: query has %d dims want %d",
@@ -69,25 +75,36 @@ func (b *Brute) TopK(query []float32, out []Neighbor) ([]Neighbor, error) {
 		out[i] = Neighbor{Distance: float32(math.MaxFloat32)}
 	}
 
+	// Pad the query so the SIMD kernel can load two YMMs.
+	var qbuf [QueryStride]float32
+	copy(qbuf[:], query)
+
+	var dists [blockSize]float32
 	data := b.vecs.Data
-	dim := b.dim
+	count := int(b.vecs.Header.Count)
 	maxIdx := 0
 
-	for i := 0; i < int(b.vecs.Header.Count); i++ {
-		d := squaredL2(query, data[i*dim:(i+1)*dim])
-		if d >= out[maxIdx].Distance {
-			continue
+	for start := 0; start < count; start += blockSize {
+		n := blockSize
+		if start+n > count {
+			n = count - start
 		}
-		out[maxIdx] = Neighbor{
-			Distance: d,
-			Index:    uint32(i),
-			Fraud:    b.lbls.Get(uint64(i)),
-		}
-		// Recompute the index of the new max.
-		maxIdx = 0
-		for j := 1; j < k; j++ {
-			if out[j].Distance > out[maxIdx].Distance {
-				maxIdx = j
+		distancesBlock(qbuf[:], data[start*b.dim:], n, dists[:n])
+		for i := 0; i < n; i++ {
+			d := dists[i]
+			if d >= out[maxIdx].Distance {
+				continue
+			}
+			out[maxIdx] = Neighbor{
+				Distance: d,
+				Index:    uint32(start + i),
+				Fraud:    b.lbls.Get(uint64(start + i)),
+			}
+			maxIdx = 0
+			for j := 1; j < k; j++ {
+				if out[j].Distance > out[maxIdx].Distance {
+					maxIdx = j
+				}
 			}
 		}
 	}
@@ -111,32 +128,6 @@ func (b *Brute) FraudScore(query []float32, scratch []Neighbor) (float32, error)
 		}
 	}
 	return float32(frauds) / float32(len(hits)), nil
-}
-
-// squaredL2 computes the squared Euclidean distance for two equal-length
-// vectors. Manual unroll into 4 accumulators helps the compiler keep the
-// FMA chain wide; for 14-dim queries this is ~5 ns on Haswell.
-func squaredL2(a, b []float32) float32 {
-	// len(a) == len(b) == dim is guaranteed by callers.
-	var s0, s1, s2, s3 float32
-	i := 0
-	n := len(a)
-	for ; i+4 <= n; i += 4 {
-		d0 := a[i] - b[i]
-		d1 := a[i+1] - b[i+1]
-		d2 := a[i+2] - b[i+2]
-		d3 := a[i+3] - b[i+3]
-		s0 += d0 * d0
-		s1 += d1 * d1
-		s2 += d2 * d2
-		s3 += d3 * d3
-	}
-	s := s0 + s1 + s2 + s3
-	for ; i < n; i++ {
-		d := a[i] - b[i]
-		s += d * d
-	}
-	return s
 }
 
 // insertionSortByDistance sorts in-place ascending. k is small (<= ~16).

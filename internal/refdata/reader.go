@@ -42,7 +42,7 @@ func OpenVectors(path string, expectDim uint32) (*Vectors, error) {
 		_ = unix.Munmap(raw)
 		return nil, fmt.Errorf("%w: got %d want %d", ErrBadDim, h.Dim, expectDim)
 	}
-	want := uint64(h.Dim) * h.Count * 4
+	want := uint64(h.Dim)*h.Count*4 + uint64(TailPadFloats)*4
 	if uint64(len(raw))-HeaderSize < want {
 		_ = unix.Munmap(raw)
 		return nil, fmt.Errorf("%w: file payload %d < expected %d", ErrBadSize, uint64(len(raw))-HeaderSize, want)
