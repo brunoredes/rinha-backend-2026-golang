@@ -52,7 +52,7 @@ services:
     ports:
       - "9999:9999"
     volumes:
-      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
     deploy:
       resources:
         limits:

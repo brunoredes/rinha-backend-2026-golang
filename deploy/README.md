@@ -67,6 +67,9 @@ docker buildx build --platform linux/amd64 \
 Then update the `image:` field in `docker-compose.yml` (or set
 `IMAGE=ghcr.io/...` so the env-substitution kicks in).
 
+The LB config lives at `nginx.conf` at the repo root so the same file
+works on both `main` and the flat `submission` branch layout.
+
 ## Tunables (env vars on the API container)
 
 | var       | default | meaning                                 |
