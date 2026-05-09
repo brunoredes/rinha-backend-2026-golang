@@ -1,0 +1,7 @@
+{
+    "participants": ["TODO"],
+    "social": ["https://github.com/brunoredes", "https://bsky.app/profile/ngbrino.bsky.social"],
+    "source-code-repo": "https://github.com/brunoredes/rinha-backend-2026-golang",
+    "stack": ["golang", "nginx"],
+    "open_to_work": false
+}
