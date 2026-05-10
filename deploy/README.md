@@ -13,17 +13,41 @@ ceiling — **1.00 CPU / 350 MB across all services**.
 
 ## Build the image locally
 
-The image is self-contained: at build time it pre-processes
-`resources/references.json.gz` into the binary `refs.f32` + `labels.bits`
-files and trains the IVF index, so the running container does no JSON
-parsing of the dataset.
+`docker-compose.yml` ships **without** a `build:` directive because the
+Rinha test runner rejects it. Use the dev overlay for local iteration:
 
 ```bash
-docker compose build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build
 ```
 
-The build step takes ~70 s on a modern laptop (k-means dominates). The
-resulting image is ~200 MB (≈170 MB of which is the IVF blobs).
+The build pre-processes `resources/references.json.gz` into the binary
+`refs.f32` + `labels.bits` files and trains the IVF index, so the
+running container does no JSON parsing of the dataset. Build takes
+~70 s on a modern laptop (k-means dominates); the resulting image is
+~200 MB (≈170 MB of which is the IVF blobs).
+
+## Publish the image (required for submission)
+
+The runner pulls a public pre-built image — there is no build step on
+its end. Push to GitHub Container Registry (free for public repos):
+
+```bash
+# 1. Authenticate (one-time). Create a PAT with write:packages scope.
+echo $GHCR_TOKEN | docker login ghcr.io -u brunoredes --password-stdin
+
+# 2. Build and push for linux/amd64.
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/brunoredes/rinha-fraud:latest \
+  --push .
+
+# 3. Make the package public (one-time, in GitHub UI):
+#    Profile → Packages → rinha-fraud → Package settings →
+#    Change visibility → Public.
+```
+
+After publishing, `docker compose up` (no override) will pull the
+image. Override with `IMAGE=ghcr.io/.../rinha-fraud:<tag>` to test a
+specific version.
 
 ## Run
 

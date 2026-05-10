@@ -8,13 +8,14 @@
 # start; api2 then mounts the same inode read-only, so the kernel page
 # cache for the 168 MB IVF blob is shared (one set of physical pages
 # under both processes).
+#
+# The Rinha test runner refuses `build:` directives — only public
+# pre-built images are allowed. To produce one, see deploy/README.md
+# (`docker buildx build --push -t $IMAGE .`).
 
 services:
   api1:
-    image: ${IMAGE:-rinha-fraud:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${IMAGE:-ghcr.io/brunoredes/rinha-fraud:latest}
     networks: [internal]
     volumes:
       - appdata:/data
@@ -28,7 +29,7 @@ services:
     restart: unless-stopped
 
   api2:
-    image: ${IMAGE:-rinha-fraud:latest}
+    image: ${IMAGE:-ghcr.io/brunoredes/rinha-fraud:latest}
     networks: [internal]
     depends_on:
       - api1

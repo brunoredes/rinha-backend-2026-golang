@@ -1,0 +1,11 @@
+# Local-development overlay. Adds the build directive so
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml build
+# still works for iteration. The submission branch ships only
+# docker-compose.yml — this file must NOT be cherry-picked over.
+
+services:
+  api1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${IMAGE:-ghcr.io/brunoredes/rinha-fraud:latest}
